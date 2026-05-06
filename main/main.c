@@ -10,12 +10,10 @@
 #include "app_uart.h"
 #include "protocol.h"
 #include "SEAII.h"
-<<<<<<< HEAD
+
 #include "app_wifi.h"
 #include "app_NFC.h"
-=======
 
->>>>>>> 725ef28d47adc0ab91e8af5292927ebd8cbcc7e3
 
 void app_main(void){   
     
@@ -41,14 +39,12 @@ void app_main(void){
     xTaskCreate(CMD3_SLOW_task,"SLOW_TASK",4096,NULL,2,NULL);
     xTaskCreate(CMD100_INVERTER_task,"INVERTER_TASK",4096,NULL,2,NULL);
 
-<<<<<<< HEAD
+
     //set_credenciales("aaa", "12345678");
     xTaskCreate(app_wifi_com_task,"WIFI",4096,NULL,3,NULL);
 
     xTaskCreate(nfc_task,"NFC",4096,NULL,3,NULL);
 
-=======
->>>>>>> 725ef28d47adc0ab91e8af5292927ebd8cbcc7e3
     printf("Arrancamos:\n\r");
     
 

@@ -21,11 +21,9 @@
 
 #define PROTOCOL_HEADER_SIZE 3          //Tamaño en bits del encabezado
 #define PROTOCOL_START_BYTE 0xAA        //Inicio de trama de protocolo
-<<<<<<< HEAD
+
 #define PROTOCOL_MAX_PAYLOAD_SIZE 10    //Tentativo, máximo payload enviable
-=======
-#define PROTOCOL_MAX_PAYLOAD_SIZE 64    //Tentativo, máximo payload enviable
->>>>>>> 725ef28d47adc0ab91e8af5292927ebd8cbcc7e3
+
 #define PROTOCOL_CRC_SEED 0xFFFF        //Polinomio del CRC
 #define PROTOCOL_WAIT   10                // Tiempo en ms a esperar por la llegada de un byte -Ver si corresponde a protocol o al config general 
 

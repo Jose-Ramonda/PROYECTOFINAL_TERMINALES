@@ -11,14 +11,10 @@
 
 #pragma once
 
-
-
-
 //Comunicaciones eidentificación
 
 #define MASTER_ID 0            // ID del maestro
 #define NODO_ID_DEFAULT 10          // ID de este nodo por ahora
-<<<<<<< HEAD
 
 //Parámetros de red
 #define WIFI_RETRY_NUM 10
@@ -32,9 +28,11 @@
 #define CMD_LED 2
 #define CMD_SLOW 3
 #define CMD_WIFI_FAIL 4
+#define CMD_RESET 5
+#define CMD_PROGMODE 6
+
 
 //Flujo
 #define CMD_INVERTER 100
 #define CMD_WIFI 101
-=======
->>>>>>> 725ef28d47adc0ab91e8af5292927ebd8cbcc7e3
+#define CMD_UID 102

@@ -67,11 +67,9 @@ void protocol_init(protocol_params_t *params){
     cmd_buff = (MessageBufferHandle_t *) malloc(params->st_cmds * sizeof(MessageBufferHandle_t)); 
 
     for(int i=0;i < params->st_cmds ;i++){
-<<<<<<< HEAD
+
         cmd_buff[i]= xMessageBufferCreate((size_t)(PROTOCOL_MAX_PAYLOAD_SIZE + 4));
-=======
-        cmd_buff[i]= xMessageBufferCreate((size_t)PROTOCOL_MAX_PAYLOAD_SIZE);
->>>>>>> 725ef28d47adc0ab91e8af5292927ebd8cbcc7e3
+
         assert(cmd_buff[i] != NULL);    //Si no hay memoria el proegrama falla
     }     
 
@@ -203,11 +201,7 @@ void parser_task(void *pvParameters) { // Recibe los datos entrantes, clasifica 
             if(cmd<100 && cmd < n_ctrl_cmd && cmd_smph != NULL){
                 xSemaphoreGive(cmd_smph[cmd]);
             }
-<<<<<<< HEAD
-            
-=======
 
->>>>>>> 725ef28d47adc0ab91e8af5292927ebd8cbcc7e3
             xTaskNotify(dispatcher_handler, PROTOCOL_RECIVED_GOOD, eSetValueWithOverwrite); //informo evento exitoso
             estado = ST_WAIT;
             break;
@@ -284,10 +278,7 @@ void dispatcher_task(void *pvParameters) {
             switch (valor)
             {
             case PROTOCOL_RECIVED_GOOD:
-<<<<<<< HEAD
-                
-=======
->>>>>>> 725ef28d47adc0ab91e8af5292927ebd8cbcc7e3
+
                 if(xQueueReceive(tx_queue, &mensaje, 0)){   //si tengo datos tatata
                     buff[1] = mensaje.msj.id;
                     buff[2] = mensaje.msj.cmd;
@@ -310,10 +301,7 @@ void dispatcher_task(void *pvParameters) {
                     memcpy(&buff[1 + PROTOCOL_HEADER_SIZE], &CRC, sizeof(uint16_t));
                     real_len = 1+PROTOCOL_HEADER_SIZE+sizeof(uint16_t);
                     enviar(buff, real_len);  //MAndo un  simple ack
-<<<<<<< HEAD
                     
-=======
->>>>>>> 725ef28d47adc0ab91e8af5292927ebd8cbcc7e3
                 }
                 break;
             case PROTOCOL_RECIVED_BAD:
