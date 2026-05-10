@@ -14,5 +14,5 @@ dependencies:
   #   # `public` flag doesn't have an effect dependencies of the `main` component.
   #   # All dependencies of `main` are public by default.
   #   public: true
-  garag/esp-idf-pn532: '*'
-  joltwallet/littlefs: ^1.1.4
+  garag/esp-idf-pn532: ^0.2.1
+  espressif/esp32-camera: '*'

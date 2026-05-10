@@ -14,3 +14,8 @@
 
 void app_wifi_com_task(void *pvParameters);
 void set_credenciales(const char *name, const char *clv);
+
+//Temporal
+
+void set_credenciales(const char *name, const char *clv);
+void app_wifi_reconfig(void);

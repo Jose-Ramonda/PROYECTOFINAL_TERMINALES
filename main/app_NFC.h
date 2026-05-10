@@ -61,6 +61,4 @@
 #define HASH_OFFSET 14
 #define PROG_TIMEOUT 50000 //Tiempo em ms que dura e modo programador de tags
 //Funciones/tareas públicas
-
-void nfc_task( void *pvParameters); 
-void nfc_task( void *pvParameters);
+void nfc_init(void);

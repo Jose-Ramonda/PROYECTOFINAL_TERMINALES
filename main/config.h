@@ -17,7 +17,7 @@
 #define NODO_ID_DEFAULT 10          // ID de este nodo por ahora
 
 //Parámetros de red
-#define WIFI_RETRY_NUM 10
+#define WIFI_RETRY_NUM 100
 
 
 //NUMEROS DE COMANDO

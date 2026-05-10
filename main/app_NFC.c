@@ -409,8 +409,6 @@ void nfc_arbitraje_task(void *pvParameters){
 
 
 void nfc_init(void){
-
-
     xTaskCreate(nfc_task,"NFC",4096,NULL,7,&xHandleLectora);
     xTaskCreate(nfc_config_task, "nfc_config", 4096, NULL, 5, &xHandleProgramadora);
     xTaskCreate(nfc_arbitraje_task,"ARBITRO",1024,NULL,4,NULL);
