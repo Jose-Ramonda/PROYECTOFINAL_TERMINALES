@@ -30,9 +30,12 @@
 #define CMD_WIFI_FAIL 4
 #define CMD_RESET 5
 #define CMD_PROGMODE 6
+#define CMD_TAKE_PH 7
+
 
 
 //Flujo
 #define CMD_INVERTER 100
 #define CMD_WIFI 101
 #define CMD_UID 102
+#define CMD_URL 103

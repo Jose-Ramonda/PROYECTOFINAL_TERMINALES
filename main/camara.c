@@ -24,11 +24,15 @@
 #include "esp_http_client.h"
 
 #include "esp_camera.h"
+#include "config.h"
+#include "protocol.h"
 
 
 
-
-static const char *TAG = "example:take_picture";
+static const char *TAG = "CAMARA";
+static esp_http_client_handle_t http_client = NULL;
+static char url_servidor[128] = "";
+static SemaphoreHandle_t cmd_sem = NULL;
 
 #if ESP_CAMERA_SUPPORTED
 static camera_config_t camera_config = {
@@ -63,7 +67,20 @@ static camera_config_t camera_config = {
     .fb_location = CAMERA_FB_IN_PSRAM,
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
 };
+static void IRAM_ATTR timbre_isr_handler(void* arg) {
+    if (cmd_sem != NULL) {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
+        // CRÍTICO: Usar la versión FromISR adentro de las interrupciones
+        xSemaphoreGiveFromISR(cmd_sem, &xHigherPriorityTaskWoken);
+
+        // Si la tarea de la cámara tiene mayor prioridad que la tarea actual,
+        // esto fuerza el cambio de contexto inmediato para que la cámara reaccione YA.
+        if (xHigherPriorityTaskWoken == pdTRUE) {
+            portYIELD_FROM_ISR();
+        }
+    }
+}
 static esp_err_t init_camera(void)
 {
     //initialize the camera
@@ -79,41 +96,128 @@ static esp_err_t init_camera(void)
 }
 
 #endif
-
+void init_http_client() {//Inicicaliza cliente HTTP
+    
+    esp_http_client_config_t config = {
+        .url = url_servidor, // Dirección destino
+        .method = HTTP_METHOD_POST,               // Vamos a enviar datos, no a pedir
+        .timeout_ms = 3000,                       // Si Node-RED no responde en 3s, abortamos
+        .keep_alive_enable = true,                // Pedimos que la conexión TCP quede abierta
+    };
+    
+    // Inicializamos el cliente con esa configuración
+    http_client = esp_http_client_init(&config);
+    
+    // Pegamos la primera "etiqueta" en la caja: Le decimos al servidor que no corte la llamada
+    esp_http_client_set_header(http_client, "Connection", "keep-alive");
+}
 
 esp_err_t send_pic(uint8_t *buffer, size_t len) {
     if (buffer == NULL || len == 0) {
-        ESP_LOGE(TAG, "Buffer de imagen vacío");
         return ESP_ERR_INVALID_ARG;
     }
 
-    esp_http_client_config_t config = {
-        .url = "http://192.168.0.15:1880/upload", // IP de tu Dell
-        .method = HTTP_METHOD_POST,
-        .timeout_ms = 5000,        // Tiempo máximo de espera
-        .disable_auto_redirect = true,
-    };
-
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-
-    // Configuramos el header para que Node-RED sepa que es una imagen
-    esp_http_client_set_header(client, "Content-Type", "image/jpeg");
-
-    // Pasamos el buffer directamente (sin copiarlo para ahorrar RAM)
-    esp_http_client_set_post_field(client, (const char *)buffer, len);
-
-    // Ejecutamos la petición
-    esp_err_t err = esp_http_client_perform(client);
-
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Envío exitoso. Status: %d", esp_http_client_get_status_code(client));
-    } else {
-        ESP_LOGE(TAG, "Fallo en el POST HTTP: %s", esp_err_to_name(err));
+    // Por seguridad, si el tubo se destruyó, lo volvemos a crear
+    if (http_client == NULL) {
+        init_http_client();
     }
 
-    // Siempre limpiar el cliente para liberar memoria
-    esp_http_client_cleanup(client);
-    return err;
+    // Pegamos la segunda "etiqueta": Le avisamos a Node-RED que los bytes son un JPEG
+    esp_http_client_set_header(http_client, "Content-Type", "image/jpeg");
+
+    // Metemos la foto adentro de la "caja" (Asignamos el payload)
+    esp_http_client_set_post_field(http_client, (const char *)buffer, len);
+
+    //Contador de 3 retys
+    int conter = 0;
+    // ¡DESPACHAMOS EL PAQUETE! (Esta función bloquea la tarea hasta que termina)
+    esp_err_t err = esp_http_client_perform(http_client);
+
+
+    while(err != ESP_OK){
+        composer(110 + conter,0,NULL,NULL);
+        conter++;
+        if(conter <3){
+        err = esp_http_client_perform(http_client);
+        } else{
+        // Como hubo un error de red, el "tubo" quedó sucio o roto.
+        // Lo destruimos y lo ponemos en NULL para que la próxima foto fuerce un init nuevo.
+        esp_http_client_cleanup(http_client);
+        http_client = NULL;
+        return err;
+        }
+    }
+    /*
+    // Revisamos el remito de entrega
+    if (err == ESP_OK) {
+        // HTTP perform salió bien a nivel de red. Ahora leemos qué dijo Node-RED.
+        int status_code = esp_http_client_get_status_code(http_client);
+        ESP_LOGI("HTTP", "Envío OK. Node-RED respondió: %d", status_code);
+        
+        // ACÁ ESTÁ LA MAGIA: NO llamamos a esp_http_client_cleanup().
+        // Dejamos http_client vivo para la próxima foto.
+
+    } else {
+        // Falló el envío (ej. se cortó el Wi-Fi o Node-RED se apagó)
+        ESP_LOGE("HTTP", "Error enviando foto: %s", esp_err_to_name(err));
+        composer(110 + conter,0,NULL,NULL);
+        
+        if(conter < 3){
+            conter++;
+
+        }
+        // Como hubo un error de red, el "tubo" quedó sucio o roto.
+        // Lo destruimos y lo ponemos en NULL para que la próxima foto fuerce un init nuevo.
+        esp_http_client_cleanup(http_client);
+        http_client = NULL;
+    }
+    */
+    return err; // Devolvemos el resultado a tu camara_task
+}
+void url_task(void *pvParameters){
+    nvs_handle_t nvs;
+    if (nvs_open("url", NVS_READONLY, &nvs) == ESP_OK) {
+        size_t url_len = sizeof(url_servidor);
+
+        memset(url_servidor, 0, sizeof(url_servidor));
+        if (nvs_get_str(nvs, "url", (char*)url_servidor, &url_len) != ESP_OK) {
+            url_servidor[0] = '\0';
+        }
+        nvs_close(nvs);
+    }
+    MessageBufferHandle_t buff = cmd_buff_getter(CMD_URL);
+    uint8_t entry_buffer[PROTOCOL_MAX_PAYLOAD_SIZE];
+    while (1)
+    {
+        if(xMessageBufferReceive(buff, entry_buffer, PROTOCOL_MAX_PAYLOAD_SIZE, portMAX_DELAY)){
+            uint16_t puerto = entry_buffer[4] | (entry_buffer[5] << 8); //Configuro el puerto
+            snprintf(url_servidor, sizeof(url_servidor), "http://%d.%d.%d.%d:%d/upload",entry_buffer[0], entry_buffer[1], entry_buffer[2], entry_buffer[3], puerto);
+            nvs_handle_t nvs_write;
+            // Abrimos en modo READWRITE
+            if (nvs_open("url", NVS_READWRITE, &nvs_write) == ESP_OK) {
+                
+                // Pisamos el valor de la key "url" con el nuevo string
+                esp_err_t err_set = nvs_set_str(nvs_write, "url", url_servidor);
+                
+                if (err_set == ESP_OK) {
+                    // CRÍTICO: nvs_commit es el que físicamente graba los electrones en la Flash
+                    nvs_commit(nvs_write); 
+                    ESP_LOGI("URL_TASK", "URL guardada exitosamente en NVS.");
+                } else {
+                    ESP_LOGE("URL_TASK", "Falló nvs_set_str: %s", esp_err_to_name(err_set));
+                }
+                
+                // Cerramos siempre la llave
+                nvs_close(nvs_write);
+            }
+            
+            esp_http_client_cleanup(http_client);
+            http_client = NULL;
+            init_http_client();
+        }
+
+    }
+
 }
 
 void camara_task(void *pvParameters)
@@ -122,24 +226,57 @@ void camara_task(void *pvParameters)
     if(ESP_OK != init_camera()) {
         return;
     }
+    cmd_sem = protocol_get_ctrl_sem(CMD_TAKE_PH);
+
+    gpio_config_t io_conf = {
+        .intr_type = GPIO_INTR_NEGEDGE,       // Interrupción cuando va a GND (bajada)
+        .pin_bit_mask = (1ULL << TIMBRE_PIN), 
+        .mode = GPIO_MODE_INPUT,               
+        .pull_up_en = GPIO_PULLUP_ENABLE,     // Pull-up interno para mantenerlo en 3.3V
+        .pull_down_en = GPIO_PULLDOWN_DISABLE
+    };
+    gpio_config(&io_conf);
+
+    // 3. Instalamos el servicio global de ISR (si no lo hiciste en otro lado)
+    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+
+    // 4. Enganchamos el manejador al pin del timbre
+    gpio_isr_handler_add(TIMBRE_PIN, timbre_isr_handler, NULL);
     vTaskDelay(pdMS_TO_TICKS(5000));
+
+    xTaskCreate(url_task,"URL",4096,NULL,4,NULL);
     while (1)
     {
-        ESP_LOGI(TAG, "Taking picture...");
-        camera_fb_t *pic = esp_camera_fb_get();
-
-        if(pic){
-            // use pic->buf to access the image
-            ESP_LOGI(TAG, "Picture taken! Its size was: %zu bytes", pic->len);
-
-            send_pic(pic->buf,pic->len);
-            esp_camera_fb_return(pic);
-        }
-
-
+        if (xSemaphoreTake(cmd_sem, portMAX_DELAY) == pdTRUE) {
         
+            
+            // 1. Encendemos el Flash (Si lo estás usando para medir)
+            gpio_set_level(FLASH, 1);
+            
+            // 2. PURGA: Sacamos la foto vieja (la que se sacó hace horas/minutos)
+            camera_fb_t *pic_vieja = esp_camera_fb_get();
+            if (pic_vieja) {
+                esp_camera_fb_return(pic_vieja); // Liberamos el buffer AL TOQUE
+            }
 
-        vTaskDelay(pdMS_TO_TICKS(3000));
+            // Al hacer el return() arriba, el hardware de la cámara saca una foto NUEVA en este instante.
+
+            // 3. CAPTURA REAL: Agarramos esa foto nueva (La de la pinza)
+            camera_fb_t *pic = esp_camera_fb_get();
+
+            if (pic) {
+                // Enviamos la foto fresca por HTTP
+                send_pic(pic->buf, pic->len);
+                
+                // Liberamos la memoria para que el hardware vuelva a sacar y guardar una "vieja" para la próxima
+                esp_camera_fb_return(pic);
+                
+                gpio_set_level(FLASH, 0);
+                composer(CMD_TAKE_PH, 0, NULL, NULL);    // Envio confirmacion
+            }
+            
+
+        } 
     }
 #else
     ESP_LOGE(TAG, "Camera support is not available for this chip");

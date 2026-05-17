@@ -12,11 +12,11 @@ START_BYTE = 0xAA
 NODO_ID = 0x0A
 PORT = '/dev/ttyUSB1'
 BAUD = 9600
-<<<<<<< HEAD
-POLLING_TIME = 2    #Polling de un segundo
-=======
+
+
+
 POLLING_TIME = 1    #Polling de un segundo
->>>>>>> 725ef28d47adc0ab91e8af5292927ebd8cbcc7e3
+
 
 def crc16_esp(data: bytes, seed=0xFFFF):
     crc = (~seed) & 0xFFFF   # igual que en ROM
@@ -120,7 +120,7 @@ def sender(pol_time,ser,cola):
                 case "3":
                     enviar_comando(100,"YVAN EHT NIOJ",ser,1)    #Devuelve invertido
                 case "4":
-                    enviar_comando(100,"YVAN EHT NIOJ",ser,0) 
+                    enviar_comando(101, '\x00\x00\x00', ser, 1) 
                 case _: #default
                     enviar_comando(0,"",ser,1)    #Envio comando polling cmd0 payload vacio
         time.sleep(pol_time)                

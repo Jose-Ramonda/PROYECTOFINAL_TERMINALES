@@ -18,9 +18,9 @@
 #define UART_PORT          UART_NUM_1
 #define UART_BAUD_RATE     9600
 
-#define UART_TX_PIN        4
-#define UART_RX_PIN        5
-#define UART_RTS_PIN       18   // DE/RE del transceiver RS485
+#define UART_TX_PIN        14
+#define UART_RX_PIN        13
+#define UART_RTS_PIN       15   // DE/RE del transceiver RS485
 
 #define UART_RX_BUF_SIZE   2048
 #define UART_TX_BUF_SIZE   0    // sin buffer TX

@@ -294,7 +294,7 @@ void dispatcher_task(void *pvParameters) {
                         xSemaphoreGive(mensaje.semaforo);
                     }
                 } else {
-                    buff[1] = id_nodo;
+                    buff[1] = MASTER_ID;
                     buff[2] = PROTOCOL_ACK_CMD;
                     buff[3] = 0;
                     CRC = esp_crc16_le(PROTOCOL_CRC_SEED, &buff[1],PROTOCOL_HEADER_SIZE);

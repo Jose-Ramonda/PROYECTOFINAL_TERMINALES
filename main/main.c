@@ -14,6 +14,7 @@
 #include "app_wifi.h"
 #include "app_NFC.h"
 #include "camara.h"
+//#include "camara.h"
 
 void app_main(void){   
     
@@ -40,11 +41,14 @@ void app_main(void){
     xTaskCreate(CMD100_INVERTER_task,"INVERTER_TASK",4096,NULL,2,NULL);
 
 
-
+    vTaskDelay(pdMS_TO_TICKS(3000));
     xTaskCreate(app_wifi_com_task,"WIFI",4096,NULL,3,NULL);
-
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    gpio_set_level(LED_INTEGRADO, 1);
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    gpio_set_level(LED_INTEGRADO, 0);
     //Forzar conección wifi para debug:
-    
+    /*
     MessageBufferHandle_t wfbuff = cmd_buff_getter(CMD_WIFI);
     uint8_t msj_falso[10] = {
     WIFI_CHNG_SSID_MSJ, // Índice 0: Comando
@@ -78,12 +82,36 @@ void app_main(void){
     msj_falso[4] = 'a';
 
     xMessageBufferSend(wfbuff,(void*) msj_falso,5,portMAX_DELAY);
-    vTaskDelay(pdMS_TO_TICKS(15000));
+    */
+
+    
+   MessageBufferHandle_t wfbuff = cmd_buff_getter(CMD_WIFI);
+    uint8_t msj_falso[3] = {
+    WIFI_PRENDER_MSJ, // Índice 0: Comando
+    0x00,               // Í
+    0x00,               // 
+    };
+    xMessageBufferSend(wfbuff,(void*) msj_falso,3,portMAX_DELAY);
+
+    for(int i= 0;i<3;i++){
+    gpio_set_level(LED_INTEGRADO, 1);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    gpio_set_level(LED_INTEGRADO, 0);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    
     
 
     //nfc_init();
     xTaskCreate(camara_task,"CAM",8192,NULL,3,NULL);
-    printf("Arrancamos:\n\r");
+
+
+
+    SemaphoreHandle_t cmd_sem = protocol_get_ctrl_sem(CMD_TAKE_PH);
+    xSemaphoreGive(cmd_sem);
+    
+    //printf("Arrancamos:\n\r");
     
 
 }

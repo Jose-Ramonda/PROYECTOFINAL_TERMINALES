@@ -143,6 +143,7 @@ void app_wifi_reconfig(){
     else{
     xEventGroupSetBits(s_wifi_event_group, WIFI_MUSTBE_BIT);//seteo el estado correcto
     ESP_ERROR_CHECK(esp_wifi_start()); //Esto dispara el evento que llama  a conect
+    esp_wifi_set_ps(WIFI_PS_NONE);
     }
 
 }
@@ -322,10 +323,12 @@ void app_wifi_com_task(void *pvParameters){
                     EventBits_t bits = xEventGroupGetBits(s_wifi_event_group);
                     if (bits & WIFI_MUSTBE_BIT){    //Estado startet+disconected->reconect
                         app_wifi_conect();  //inteto conectar
+                        
                     }
                     else{
                         xEventGroupSetBits(s_wifi_event_group, WIFI_MUSTBE_BIT);//seteo el estado correcto
                         ESP_ERROR_CHECK(esp_wifi_start() ); //Esto dispara el evento que llama  a conect
+                        esp_wifi_set_ps(WIFI_PS_NONE);
                         ESP_LOGI("TAG","ACA MANDE EL START");
                     }
                     break;

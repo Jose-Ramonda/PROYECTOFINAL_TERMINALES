@@ -13,7 +13,7 @@
 
 #pragma once
 
-#define LED_INTEGRADO 2
+#define LED_INTEGRADO 4
 
 
 
