@@ -9,15 +9,54 @@
 #include "config.h"
 #include "app_uart.h"
 #include "protocol.h"
-#include "SEAII.h"
+#include "DIO.h"
+//#include "SEAII.h"
 
 #include "app_wifi.h"
 #include "app_NFC.h"
 #include "camara.h"
-//#include "camara.h"
+#include "PCF8574.h"
+#include "esp_log.h"
+#include "driver/i2c_master.h"
+#include "esp_err.h"
+#include "nvs_flash.h"
 
-void app_main(void){   
+void reset_task(void *pvParameters) {
     
+    SemaphoreHandle_t cmd_sem = protocol_get_ctrl_sem(CMD_RESET);
+    if (cmd_sem == NULL) {
+        ESP_LOGE("RESET", "No se pudo obtener el semáforo de puerta");
+        esp_restart();
+    }
+
+    while(1){
+        if (xSemaphoreTake(cmd_sem, portMAX_DELAY) == pdTRUE) {
+            esp_restart();
+        }                               
+    }
+}
+
+void life_signal(void){
+    gpio_set_level(FLASH, 1);
+    vTaskDelay(pdMS_TO_TICKS(750));
+    pcf8574_set_pin(PCF_DESTRABADOR_PIN,0);
+    gpio_set_level(FLASH, 0);
+    vTaskDelay(pdMS_TO_TICKS(750));
+    pcf8574_set_pin(PCF_DESTRABADOR_PIN,1);
+    gpio_set_level(FLASH, 1);
+    vTaskDelay(pdMS_TO_TICKS(750));
+    pcf8574_set_pin(PCF_DESTRABADOR_PIN,0);
+    gpio_set_level(FLASH, 0);
+    vTaskDelay(pdMS_TO_TICKS(750));
+    pcf8574_set_pin(PCF_DESTRABADOR_PIN,1);
+    gpio_set_level(FLASH, 1);
+    vTaskDelay(pdMS_TO_TICKS(750));
+    gpio_set_level(FLASH, 0);
+}
+
+void app_main(void){ 
+    
+    //Inicializar el protocolo y la comunicación serial:
     protocol_params_t parametros;
     parametros.ctrl_cmds =10;
     parametros.st_cmds =10;
@@ -36,84 +75,58 @@ void app_main(void){
     xTaskCreate(uart_rx_task,"RX_TASK",4096,NULL,10,NULL);
     protocol_init(&parametros);
 
-    xTaskCreate(CMD2_LED_task,"LED_TASK",4096,NULL,4,NULL);
-    xTaskCreate(CMD3_SLOW_task,"SLOW_TASK",4096,NULL,2,NULL);
-    xTaskCreate(CMD100_INVERTER_task,"INVERTER_TASK",4096,NULL,2,NULL);
-
-
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    xTaskCreate(app_wifi_com_task,"WIFI",4096,NULL,3,NULL);
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    gpio_set_level(LED_INTEGRADO, 1);
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    gpio_set_level(LED_INTEGRADO, 0);
-    //Forzar conección wifi para debug:
-    /*
-    MessageBufferHandle_t wfbuff = cmd_buff_getter(CMD_WIFI);
-    uint8_t msj_falso[10] = {
-    WIFI_CHNG_SSID_MSJ, // Índice 0: Comando
-    0x01,               // Índice 1: Parámetro o ID
-    0x01,               // Índice 2: Parámetro o ID
-    'R',                // Índice 3
-    'a',                // Índice 4
-    'm',                // Índice 5
-    'o',                // Índice 6
-    'n',                // Índice 7
-    'd',                // Índice 8
-    'a'                 // Índice 9
-    };
-    xMessageBufferSend(wfbuff,(void*) msj_falso,10,portMAX_DELAY);
-
-    msj_falso[0]= WIFI_CHNG_PASS_MSJ;
-    msj_falso[2] = 0x02;
-    msj_falso[3] = 'a';
-    msj_falso[4] = 'z';
-    msj_falso[5] = 'u';
-    msj_falso[6] = 'l';
-    msj_falso[7] = 'g';
-    msj_falso[8] = 'r';
-    msj_falso[9] = 'a';
-
-    xMessageBufferSend(wfbuff,(void*) msj_falso,10,portMAX_DELAY);
-
-    msj_falso[0]= WIFI_CHNG_PASS_MSJ;
-    msj_falso[1] = 0x02;
-    msj_falso[3] = 'n';
-    msj_falso[4] = 'a';
-
-    xMessageBufferSend(wfbuff,(void*) msj_falso,5,portMAX_DELAY);
-    */
-
     
-   MessageBufferHandle_t wfbuff = cmd_buff_getter(CMD_WIFI);
-    uint8_t msj_falso[3] = {
-    WIFI_PRENDER_MSJ, // Índice 0: Comando
-    0x00,               // Í
-    0x00,               // 
-    };
-    xMessageBufferSend(wfbuff,(void*) msj_falso,3,portMAX_DELAY);
+    //Esto se borrará
+    //xTaskCreate(CMD2_LED_task,"LED_TASK",4096,NULL,4,NULL);
+    //xTaskCreate(CMD3_SLOW_task,"SLOW_TASK",4096,NULL,2,NULL);
+    //xTaskCreate(CMD100_INVERTER_task,"INVERTER_TASK",4096,NULL,2,NULL);
 
-    for(int i= 0;i<3;i++){
-    gpio_set_level(LED_INTEGRADO, 1);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    gpio_set_level(LED_INTEGRADO, 0);
-    vTaskDelay(pdMS_TO_TICKS(500));
+
+    //Configurar bus I2C
+    static i2c_master_bus_handle_t bus0_handle;
+    i2c_master_bus_config_t bus_cfg = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_NUM_0,
+        .sda_io_num = SDA_PIN,
+        .scl_io_num = SCL_PIN,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &bus0_handle));
+
+    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+
+    //Inicializar las tareas
+        //Initialize NVS / init de la flash
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      ret = nvs_flash_init();
     }
+    ESP_ERROR_CHECK(ret);   //Verifico porlas
 
-    
-    
+    xTaskCreate(app_wifi_com_task,"WIFI",4096,NULL,3,NULL);
 
-    //nfc_init();
+
+    nfc_init();
+    pcf_init();
+    dio_init();
+
+    //life_signal();
     xTaskCreate(camara_task,"CAM",8192,NULL,3,NULL);
-
-
-
-    SemaphoreHandle_t cmd_sem = protocol_get_ctrl_sem(CMD_TAKE_PH);
-    xSemaphoreGive(cmd_sem);
-    
-    //printf("Arrancamos:\n\r");
     
 
+    //Mandar foto ->debug
+    // SemaphoreHandle_t cmd_sem = protocol_get_ctrl_sem(CMD_TAKE_PH);
+    //xSemaphoreGive(cmd_sem);
+    //xTaskCreate(reset_task,"RST",512,NULL,20,NULL);
+    composer(CMD_READY,0,NULL,NULL);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    //life_signal();
+
+    SemaphoreHandle_t test = protocol_get_ctrl_sem(CMD_DOOR);
+    xSemaphoreGive(test);
+    
 }
    
 

@@ -11,10 +11,10 @@
 //Modo de conectividad: I2C 
 // I2C mode needs only SDA, SCL and IRQ pins. RESET pin will be used if valid.
 // IRQ pin can be used in polling mode or in interrupt mode. Use menuconfig to select mode.
-#define SCL_PIN    (22)
-#define SDA_PIN    (21)
-#define RESET_PIN  (23)
-#define IRQ_PIN    (19) //Las interrupciones del componente deben activarse en el menuconfig
+
+#define DUMMY_PIN (-1)  //Ya no mando pines válidos así no crea el bus, lo creo afuera
+#define RESET_PIN  (-1) //Para el modo i2c el oin no funciona, reseteo de forma manual
+#define IRQ_PIN    (-1) //Las interrupciones del componente deben activarse en el menuconfig
 
 
 //Comandos de NTAG 21X que no existen en la librería

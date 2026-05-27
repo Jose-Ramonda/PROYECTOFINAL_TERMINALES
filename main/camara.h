@@ -7,7 +7,7 @@
 */
 
 // ESP32Cam (AiThinker) PIN Map -> del camera_pinout.h del ejemplo
-#define TIMBRE_PIN 3
+
 #define CAM_PIN_PWDN 32
 #define CAM_PIN_RESET -1 //software reset will be performed
 #define CAM_PIN_XCLK 0

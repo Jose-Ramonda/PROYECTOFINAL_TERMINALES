@@ -19,8 +19,6 @@
 
 #include "sdkconfig.h"
 #include "pn532_driver_i2c.h"
-#include "pn532_driver_hsu.h"
-#include "pn532_driver_spi.h"
 #include "pn532.h"
 
 #include "mbedtls/md.h" //Librería para calcular HASH
@@ -77,7 +75,7 @@ void nfc_config_task( void *pvParameters){
         ESP_LOGE(TAG,"NO PN532 NO INICIALIZADO");
         vTaskDelete(NULL);
     }else{
-        printf("NFC STARTEANDO MODO CONFIG\n");
+        //printf("NFC STARTEANDO MODO CONFIG\n");
     }
 
      while (1)
@@ -226,29 +224,38 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
     
     esp_err_t err;
 
-    printf("NFC STARTEANDO\n");
-
-
-
+// Este aviso sale siempre al iniciar la tarea
+    composer(0x97, 0, NULL, NULL); 
     ESP_LOGI(TAG, "init PN532 in I2C mode");
-    ESP_ERROR_CHECK(pn532_new_driver_i2c(SDA_PIN, SCL_PIN, RESET_PIN, IRQ_PIN, 0, &pn532_io));
 
     do {
-        err = pn532_init(&pn532_io);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "failed to initialize PN532");
-            //pn532_release(&pn532_io);
+        // 1. Creamos el driver limpio en cada intento
+        //err = pn532_new_driver_i2c(SDA_PIN, SCL_PIN, RESET_PIN, IRQ_PIN, 0, &pn532_io);
+        err = pn532_new_driver_i2c(DUMMY_PIN,DUMMY_PIN, RESET_PIN, IRQ_PIN, 0, &pn532_io);
+        if (err == ESP_OK) {
+            // 2. Intentamos inicializar el chip físico
+            err = pn532_init(&pn532_io);
+            
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "failed to initialize PN532, liberando driver...");
+                pn532_release(&pn532_io); // Liberamos el driver viejo antes de reintentar
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+            }
+        } else {
+            ESP_LOGE(TAG, "No se pudo crear el driver I2C");
             vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
-    } while(err != ESP_OK);
-    //Creo la tarea de grabado
-    //
 
-    smph= xSemaphoreCreateBinary();
+    } while(err != ESP_OK); // Solo sale de acá si el PN532 respondió con éxito
+
+    // RECIÉN ACÁ EL CHIP RESPONDIÓ EL SALUDO
+    smph = xSemaphoreCreateBinary();
 
     ESP_LOGI(TAG, "Waiting for an ISO14443A Card ...");
+    composer(0x99, 0, NULL, NULL);    // <--- Ahora sí te va a llegar este paquete
 
-    
+  
+    xTaskCreate(nfc_config_task, "nfc_config", 4096, NULL, 5, &xHandleProgramadora);
     while (1)
     {
         
@@ -259,16 +266,18 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
         // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
         // 'uid' will be populated with the UID, and uid_length will indicate
         // if the uid is 4 bytes (Mifare Classic) or 7 bytes (Mifare Ultralight)
-        err = pn532_read_passive_target_id(&pn532_io, PN532_BRTY_ISO14443A_106KBPS, uid, &uid_length, 0);//Esperar tag
+        err = pn532_read_passive_target_id(&pn532_io, PN532_BRTY_ISO14443A_106KBPS, uid, &uid_length,1000);//Esperar tag
         vTaskDelay(pdMS_TO_TICKS(50));
         if (ESP_OK == err && modo == MODO_LECT)
         {
+            composer(0x95,0,NULL,NULL); 
             // Display some basic information about the card //Debug
             ESP_LOGI(TAG, "\nFound an ISO14443A card");
             ESP_LOGI(TAG, "UID Length: %d bytes", uid_length);
             ESP_LOGI(TAG, "UID Value:");
             ESP_LOG_BUFFER_HEX_LEVEL(TAG, uid, uid_length, ESP_LOG_INFO);
-            
+            composer(CMD_UID,7,uid,NULL);
+            //gpio_set_level(4, 1);
             if(uid_length == 7){
                 err = pn532_in_list_passive_target(&pn532_io);
                 if (err != ESP_OK) {
@@ -281,9 +290,9 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
             }
 
             vTaskDelay(pdMS_TO_TICKS(20)); // Respiro
-
-                        get_hmac(uid, (uint8_t*)clave_hash, strlen(clave_hash), hash);
-            printf("PWD: %02X %02X %02X %02X  PACK: %02X %02X \n",hash[0],hash[1],hash[2],hash[3],hash[4],hash[5]);
+            
+            get_hmac(uid, (uint8_t*)clave_hash, strlen(clave_hash), hash);
+            //printf("PWD: %02X %02X %02X %02X  PACK: %02X %02X \n",hash[0],hash[1],hash[2],hash[3],hash[4],hash[5]);
             
             uint8_t cmd[]={PN532_COMMAND_INCOMMUNICATETHRU, NTAG_COMMAND_PWD_AUTH,hash[0],hash[1],hash[2],hash[3], 0x00};
             //uint8_t cmd[]={PN532_COMMAND_INCOMMUNICATETHRU, NTAG_COMMAND_PWD_AUTH,0xFF,0xFF,0xFF,0xFF, 0x00};
@@ -327,7 +336,7 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
 
 
             // Si querés usar printf a secas:
-            printf("Valor numérico del Mirror: %ld\n", valor_mirror);
+            //printf("Valor numérico del Mirror: %ld\n", valor_mirror);
             // Suponiendo que buffer_temporal tiene "14\0" o "000014\0"
             // Usamos base 16 para que interprete el string como Hexadecimal
             uint32_t valor_mirror_le = (uint32_t)strtol((const char*)buffer_temporal, NULL, 16);
@@ -336,7 +345,7 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
                         ((uint32_t)retorno[9] << 8)  | 
                         ((uint32_t)retorno[10] << 16);
 
-            printf("VALOR DEL CONTADOR pasado: %lu\n", contador_num);
+            //printf("VALOR DEL CONTADOR pasado: %lu\n", contador_num);
 
 
             //Probamos obtener contador por getcounter
@@ -358,7 +367,7 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
                         ((uint32_t)retorno[9] << 8)  | 
                         ((uint32_t)retorno[10] << 16);
 
-            printf("VALOR DEL CONTADOR: %lu\n", contador_num);
+            //printf("VALOR DEL CONTADOR: %lu\n", contador_num);
 
             
 
@@ -410,6 +419,6 @@ void nfc_arbitraje_task(void *pvParameters){
 
 void nfc_init(void){
     xTaskCreate(nfc_task,"NFC",4096,NULL,7,&xHandleLectora);
-    xTaskCreate(nfc_config_task, "nfc_config", 4096, NULL, 5, &xHandleProgramadora);
+   
     xTaskCreate(nfc_arbitraje_task,"ARBITRO",1024,NULL,4,NULL);
 }

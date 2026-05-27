@@ -194,14 +194,16 @@ void parser_task(void *pvParameters) { // Recibe los datos entrantes, clasifica 
             //Acá tengo que hacer el parseo
             ESP_LOGI("PARSER","MENSAJE EXITOSO, Comando %d Msj len %d", cmd, len);
             printf("%.*s\n", len, &buff[PROTOCOL_HEADER_SIZE]);
-            //Aca debo mandar el ACK, no en las tareas
+            
             if(cmd >= 100 && cmd-100 < n_st_cmd && cmd_buff != NULL){
                 xMessageBufferSend(cmd_buff[cmd-100],&buff[PROTOCOL_HEADER_SIZE],len,pdMS_TO_TICKS(PROTOCOL_WAIT * len));
             }
             if(cmd<100 && cmd < n_ctrl_cmd && cmd_smph != NULL){
                 xSemaphoreGive(cmd_smph[cmd]);
             }
-
+            if(cmd == CMD_RESET){
+                esp_restart();
+            }
             xTaskNotify(dispatcher_handler, PROTOCOL_RECIVED_GOOD, eSetValueWithOverwrite); //informo evento exitoso
             estado = ST_WAIT;
             break;

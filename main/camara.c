@@ -67,24 +67,11 @@ static camera_config_t camera_config = {
     .fb_location = CAMERA_FB_IN_PSRAM,
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
 };
-static void IRAM_ATTR timbre_isr_handler(void* arg) {
-    if (cmd_sem != NULL) {
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-        // CRÍTICO: Usar la versión FromISR adentro de las interrupciones
-        xSemaphoreGiveFromISR(cmd_sem, &xHigherPriorityTaskWoken);
-
-        // Si la tarea de la cámara tiene mayor prioridad que la tarea actual,
-        // esto fuerza el cambio de contexto inmediato para que la cámara reaccione YA.
-        if (xHigherPriorityTaskWoken == pdTRUE) {
-            portYIELD_FROM_ISR();
-        }
-    }
-}
 static esp_err_t init_camera(void)
 {
     //initialize the camera
-    nvs_flash_init();
+    //nvs_flash_init();
     esp_err_t err = esp_camera_init(&camera_config);
     if (err != ESP_OK)
     {
@@ -138,6 +125,7 @@ esp_err_t send_pic(uint8_t *buffer, size_t len) {
         composer(110 + conter,0,NULL,NULL);
         conter++;
         if(conter <3){
+        ESP_LOGW(TAG,"ERROR AL ENVIAR INTENTO %d",conter);
         err = esp_http_client_perform(http_client);
         } else{
         // Como hubo un error de red, el "tubo" quedó sucio o roto.
@@ -172,6 +160,7 @@ esp_err_t send_pic(uint8_t *buffer, size_t len) {
         http_client = NULL;
     }
     */
+    ESP_LOGI(TAG,"ENVIADO BEM");
     return err; // Devolvemos el resultado a tu camara_task
 }
 void url_task(void *pvParameters){
@@ -228,21 +217,8 @@ void camara_task(void *pvParameters)
     }
     cmd_sem = protocol_get_ctrl_sem(CMD_TAKE_PH);
 
-    gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_NEGEDGE,       // Interrupción cuando va a GND (bajada)
-        .pin_bit_mask = (1ULL << TIMBRE_PIN), 
-        .mode = GPIO_MODE_INPUT,               
-        .pull_up_en = GPIO_PULLUP_ENABLE,     // Pull-up interno para mantenerlo en 3.3V
-        .pull_down_en = GPIO_PULLDOWN_DISABLE
-    };
-    gpio_config(&io_conf);
 
-    // 3. Instalamos el servicio global de ISR (si no lo hiciste en otro lado)
-    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
-
-    // 4. Enganchamos el manejador al pin del timbre
-    gpio_isr_handler_add(TIMBRE_PIN, timbre_isr_handler, NULL);
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    //vTaskDelay(pdMS_TO_TICKS(5000));
 
     xTaskCreate(url_task,"URL",4096,NULL,4,NULL);
     while (1)
