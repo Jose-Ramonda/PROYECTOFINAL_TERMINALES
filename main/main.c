@@ -112,7 +112,7 @@ void app_main(void){
     pcf_init();
     dio_init();
 
-    //life_signal();
+    
     xTaskCreate(camara_task,"CAM",8192,NULL,3,NULL);
     
 
@@ -122,10 +122,8 @@ void app_main(void){
     //xTaskCreate(reset_task,"RST",512,NULL,20,NULL);
     composer(CMD_READY,0,NULL,NULL);
     vTaskDelay(pdMS_TO_TICKS(2000));
-    //life_signal();
 
-    SemaphoreHandle_t test = protocol_get_ctrl_sem(CMD_DOOR);
-    xSemaphoreGive(test);
+
     
 }
    

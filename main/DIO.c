@@ -72,7 +72,7 @@ void dio_init(void){
     cmd_foto = protocol_get_ctrl_sem(CMD_TAKE_PH);
     xTimbreTimer = xTimerCreate("TimerTimbre", pdMS_TO_TICKS(TIEMPO_TIMBRE), pdFALSE, (void *) 0, vTimbreCallback);
 
-    xTaskCreate(puerta_task,"DOOR",2048,NULL,8,NULL);
+    xTaskCreate(puerta_task,"DOOR",4096,NULL,8,NULL);
 
 
     gpio_reset_pin(4); 
@@ -95,7 +95,7 @@ void puerta_task(void *pvParameters) {
 
     while(1){
         if (xSemaphoreTake(cmd_puerta, portMAX_DELAY) == pdTRUE) {
-            composer(CMD_DOOR,0,NULL,NULL);//Envío confirmación
+            
             pcf8574_set_pin(PCF_DESTRABADOR_PIN,0);  //Destrabo puerta
             composer(CMD_DOOR,0,NULL,NULL);//Envío confirmación
             vTaskDelay(pdMS_TO_TICKS(TIEMPO_PUERTA));

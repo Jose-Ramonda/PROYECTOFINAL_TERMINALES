@@ -122,7 +122,7 @@ esp_err_t send_pic(uint8_t *buffer, size_t len) {
 
 
     while(err != ESP_OK){
-        composer(110 + conter,0,NULL,NULL);
+        
         conter++;
         if(conter <3){
         ESP_LOGW(TAG,"ERROR AL ENVIAR INTENTO %d",conter);

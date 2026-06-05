@@ -14,6 +14,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 
 
@@ -30,7 +31,7 @@
 static uint8_t modo;
 #define MODO_LECT 0
 #define MODO_PROG 1
-static SemaphoreHandle_t smph = NULL;
+
 
 static const char *TAG = "ntag_read";
 
@@ -225,7 +226,7 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
     esp_err_t err;
 
 // Este aviso sale siempre al iniciar la tarea
-    composer(0x97, 0, NULL, NULL); 
+    
     ESP_LOGI(TAG, "init PN532 in I2C mode");
 
     do {
@@ -249,16 +250,15 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
     } while(err != ESP_OK); // Solo sale de acá si el PN532 respondió con éxito
 
     // RECIÉN ACÁ EL CHIP RESPONDIÓ EL SALUDO
-    smph = xSemaphoreCreateBinary();
+    SemaphoreHandle_t smph = xSemaphoreCreateBinary();
+    xSemaphoreGive(smph);
 
     ESP_LOGI(TAG, "Waiting for an ISO14443A Card ...");
-    composer(0x99, 0, NULL, NULL);    // <--- Ahora sí te va a llegar este paquete
 
-  
     xTaskCreate(nfc_config_task, "nfc_config", 4096, NULL, 5, &xHandleProgramadora);
     while (1)
     {
-        
+
         uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0}; // Buffer to store the returned UID
         uint8_t uid_length;   // Length of the UID (4 or 7 bytes depending on ISO14443A card type)
         uint8_t hash[6];    //Aca guardamos el hash con el pwd y el pack
@@ -266,18 +266,21 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
         // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
         // 'uid' will be populated with the UID, and uid_length will indicate
         // if the uid is 4 bytes (Mifare Classic) or 7 bytes (Mifare Ultralight)
-        err = pn532_read_passive_target_id(&pn532_io, PN532_BRTY_ISO14443A_106KBPS, uid, &uid_length,1000);//Esperar tag
-        vTaskDelay(pdMS_TO_TICKS(50));
+        err = pn532_read_passive_target_id(&pn532_io, PN532_BRTY_ISO14443A_106KBPS, uid, &uid_length,50);//Esperar tag
+        if(err != ESP_OK){
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
         if (ESP_OK == err && modo == MODO_LECT)
         {
-            composer(0x95,0,NULL,NULL); 
+            
             // Display some basic information about the card //Debug
             ESP_LOGI(TAG, "\nFound an ISO14443A card");
             ESP_LOGI(TAG, "UID Length: %d bytes", uid_length);
             ESP_LOGI(TAG, "UID Value:");
             ESP_LOG_BUFFER_HEX_LEVEL(TAG, uid, uid_length, ESP_LOG_INFO);
-            composer(CMD_UID,7,uid,NULL);
-            //gpio_set_level(4, 1);
+            
+            
             if(uid_length == 7){
                 err = pn532_in_list_passive_target(&pn532_io);
                 if (err != ESP_OK) {
@@ -292,7 +295,7 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
             vTaskDelay(pdMS_TO_TICKS(20)); // Respiro
             
             get_hmac(uid, (uint8_t*)clave_hash, strlen(clave_hash), hash);
-            //printf("PWD: %02X %02X %02X %02X  PACK: %02X %02X \n",hash[0],hash[1],hash[2],hash[3],hash[4],hash[5]);
+            
             
             uint8_t cmd[]={PN532_COMMAND_INCOMMUNICATETHRU, NTAG_COMMAND_PWD_AUTH,hash[0],hash[1],hash[2],hash[3], 0x00};
             //uint8_t cmd[]={PN532_COMMAND_INCOMMUNICATETHRU, NTAG_COMMAND_PWD_AUTH,0xFF,0xFF,0xFF,0xFF, 0x00};
@@ -310,6 +313,9 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
                 } else ESP_LOGE(TAG,"ERROR DE VALIDACION");
             }
 
+            vTaskDelay(pdMS_TO_TICKS(50));
+
+            
             //LEER MIRROR DEL CONTADOR
             cmd[1]=NTAG_COMMAND_FAST_READ;
             cmd[2]=NTAG_ADDR_MIRROR_CNT;
@@ -332,45 +338,21 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
             memcpy(buffer_temporal, &retorno[8], 6);
 
             // strtol espera (const char*), así que casteamos para que el compilador no llore
-            long valor_mirror = strtol((const char*)buffer_temporal, NULL, 10);
+            contador_num = strtoul(buffer_temporal, NULL, 16);
 
 
-            // Si querés usar printf a secas:
-            //printf("Valor numérico del Mirror: %ld\n", valor_mirror);
-            // Suponiendo que buffer_temporal tiene "14\0" o "000014\0"
-            // Usamos base 16 para que interprete el string como Hexadecimal
-            uint32_t valor_mirror_le = (uint32_t)strtol((const char*)buffer_temporal, NULL, 16);
-
-                        contador_num = (uint32_t)retorno[8]         | 
-                        ((uint32_t)retorno[9] << 8)  | 
-                        ((uint32_t)retorno[10] << 16);
-
-            //printf("VALOR DEL CONTADOR pasado: %lu\n", contador_num);
-
-
-            //Probamos obtener contador por getcounter
-            cmd[1]=NTAG_COMMAND_READ_CNT;
-            cmd[2]=NTAG_ADDR_CNT;
-
-            err = pn532_send_command_wait_answer(&pn532_io, cmd, 3, retorno, 15, 100);
-            if(err != ESP_OK){
-                ESP_LOGE(TAG,"ERROR al obtener contador");
-                continue;
-            }else{
-                ESP_LOGW(TAG, "--- TRAMA PURA DEVUELTA POR LA TARJETA  AL obtener contador");
-                ESP_LOG_BUFFER_HEX_LEVEL(TAG, retorno, 15, ESP_LOG_INFO);
-            }
-            // Suponiendo que retorno[8] es el primer byte del contador (C0)
+            uint8_t buffer_salida[10];
+            memcpy(buffer_salida, uid, 7);
             
+            buffer_salida[7] = (contador_num >> 16) & 0xFF; // Byte alto
+            buffer_salida[8] = (contador_num >> 8)  & 0xFF; // Byte medio
+            buffer_salida[9] = contador_num         & 0xFF; // Byte bajo
 
-            contador_num = (uint32_t)retorno[8]         | 
-                        ((uint32_t)retorno[9] << 8)  | 
-                        ((uint32_t)retorno[10] << 16);
 
-            //printf("VALOR DEL CONTADOR: %lu\n", contador_num);
+            composer(CMD_NFC,10,buffer_salida,smph);
 
-            
-
+            xSemaphoreTake(smph,portMAX_DELAY);
+            xSemaphoreGive(smph);
             vTaskDelay(1000 / portTICK_PERIOD_MS); 
         }
 
