@@ -37,7 +37,7 @@
 #define CMD_READY 2
 #define CMD_DOOR 3
 #define CMD_WIFI_FAIL 4
-//Pendiente el 5
+#define CMD_RECOVER 5
 #define CMD_PROGMODE 6
 #define CMD_TAKE_PH 7
 

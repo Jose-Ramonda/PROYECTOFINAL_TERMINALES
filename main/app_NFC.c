@@ -37,10 +37,18 @@ static const char *TAG = "ntag_read";
 
 static pn532_io_t pn532_io; //Handler del nfc
 
+
 static TaskHandle_t xHandleLectora = NULL;
 static TaskHandle_t xHandleProgramadora = NULL;
 
 static const char *clave_hash = "SI_FUERAS_MI_EMPLEADO_TE_DESPIDO"; //Clave ficticia por seguridad  
+
+static uint8_t retorno[40];
+static uint8_t uid[10]; 
+static uint8_t uid_length;   
+static uint8_t hash[32];    
+static uint8_t cmd[10];
+
 
 void get_hmac(const uint8_t *uid, const uint8_t *key, size_t key_len, uint8_t *out_bytes) {
     uint8_t hmac_result[32]; // HASH Resultado
@@ -240,7 +248,7 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
             if (err != ESP_OK) {
                 ESP_LOGW(TAG, "failed to initialize PN532, liberando driver...");
                 pn532_release(&pn532_io); // Liberamos el driver viejo antes de reintentar
-                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                vTaskDelay(10000 / portTICK_PERIOD_MS);
             }
         } else {
             ESP_LOGE(TAG, "No se pudo crear el driver I2C");
@@ -259,14 +267,14 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
     while (1)
     {
 
-        uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0}; // Buffer to store the returned UID
-        uint8_t uid_length;   // Length of the UID (4 or 7 bytes depending on ISO14443A card type)
-        uint8_t hash[6];    //Aca guardamos el hash con el pwd y el pack
+        memset(uid, 0, sizeof(uid)); // Limpia el UID por las dudas // Buffer to store the returned UID
+        //uint8_t uid_length;   // Length of the UID (4 or 7 bytes depending on ISO14443A card type)
+        //uint8_t hash[6];    //Aca guardamos el hash con el pwd y el pack
 
         // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
         // 'uid' will be populated with the UID, and uid_length will indicate
         // if the uid is 4 bytes (Mifare Classic) or 7 bytes (Mifare Ultralight)
-        err = pn532_read_passive_target_id(&pn532_io, PN532_BRTY_ISO14443A_106KBPS, uid, &uid_length,50);//Esperar tag
+        err = pn532_read_passive_target_id(&pn532_io, PN532_BRTY_ISO14443A_106KBPS, uid, &uid_length,200);//Esperar tag
         if(err != ESP_OK){
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
@@ -281,6 +289,7 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
             ESP_LOG_BUFFER_HEX_LEVEL(TAG, uid, uid_length, ESP_LOG_INFO);
             
             
+            /*  Posiblemente eliminar
             if(uid_length == 7){
                 err = pn532_in_list_passive_target(&pn532_io);
                 if (err != ESP_OK) {
@@ -291,26 +300,50 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
                 ESP_LOGE(TAG,"NO ES UNA NTAG");
                 continue;
             }
+            */
 
-            vTaskDelay(pdMS_TO_TICKS(20)); // Respiro
+            if(uid_length != 7){
+                ESP_LOGE(TAG,"NO ES UNA NTAG");
+                continue;
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(50)); // Respiro
             
             get_hmac(uid, (uint8_t*)clave_hash, strlen(clave_hash), hash);
             
             
-            uint8_t cmd[]={PN532_COMMAND_INCOMMUNICATETHRU, NTAG_COMMAND_PWD_AUTH,hash[0],hash[1],hash[2],hash[3], 0x00};
+            //uint8_t cmd[]={PN532_COMMAND_INCOMMUNICATETHRU, NTAG_COMMAND_PWD_AUTH,hash[0],hash[1],hash[2],hash[3], 0x00};
+            cmd[0]=PN532_COMMAND_INCOMMUNICATETHRU;
+            cmd[1]=NTAG_COMMAND_PWD_AUTH;
+            cmd[2]=hash[0];
+            cmd[3]=hash[1];
+            cmd[4]=hash[2];
+            cmd[5]=hash[3];
+            
+            
             //uint8_t cmd[]={PN532_COMMAND_INCOMMUNICATETHRU, NTAG_COMMAND_PWD_AUTH,0xFF,0xFF,0xFF,0xFF, 0x00};
-            uint8_t retorno[15];
+            
 
-            err = pn532_send_command_wait_answer(&pn532_io, cmd, 6, retorno, 15, 100);
+            err = pn532_send_command_wait_answer(&pn532_io, cmd, 6, retorno, 40, 500);
             if(err != ESP_OK){
                 ESP_LOGE(TAG,"ERROR al validar");
                 continue;
             }else{
                 ESP_LOGW(TAG, "--- TRAMA PURA DEVUELTA POR LA TARJETA  AL AUTENTICAR");
                 ESP_LOG_BUFFER_HEX_LEVEL(TAG, retorno, 15, ESP_LOG_INFO);
+                // Falla de RF o tarjeta retirada antes de tiempo
+                if(retorno[7] != 0x00) {
+                    ESP_LOGE(TAG,"Fallo de RF interno del PN532 (Status: 0x%02x)", retorno[7]);
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    continue; 
+                }
                 if(retorno[8] == hash[4] && retorno[9] == hash[5]){
                     ESP_LOGI(TAG,"EXITO DE VALIDACION ;)");
-                } else ESP_LOGE(TAG,"ERROR DE VALIDACION");
+                } else {
+                    ESP_LOGE(TAG,"ERROR DE VALIDACION");
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    continue;
+                }
             }
 
             vTaskDelay(pdMS_TO_TICKS(50));
@@ -320,13 +353,19 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
             cmd[1]=NTAG_COMMAND_FAST_READ;
             cmd[2]=NTAG_ADDR_MIRROR_CNT;
             cmd[3]=NTAG_ADDR_MIRROR_CNT +1;
-            err = pn532_send_command_wait_answer(&pn532_io, cmd, 4, retorno, 15, 100);
+            err = pn532_send_command_wait_answer(&pn532_io, cmd, 4, retorno, 40, 500);
             if(err != ESP_OK){
                 ESP_LOGE(TAG,"ERROR al obtener contador");
                 continue;
             }else{
                 ESP_LOGW(TAG, "--- TRAMA PURA DEVUELTA POR LA TARJETA  AL LEER contador");
                 ESP_LOG_BUFFER_HEX_LEVEL(TAG, retorno, 15, ESP_LOG_INFO);
+                // Falla de RF o tarjeta retirada antes de tiempo
+                if(retorno[7] != 0x00) {
+                    ESP_LOGE(TAG,"Fallo de RF interno del PN532 (Status: 0x%02x)", retorno[7]);
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    continue; 
+                }
             }
             // Si el mirror ocupa 6 bytes y empieza en retorno[8]
             uint32_t contador_num = 0;
@@ -353,7 +392,7 @@ void nfc_task( void *pvParameters){ //Reemplaza al app_main del ejemplo
 
             xSemaphoreTake(smph,portMAX_DELAY);
             xSemaphoreGive(smph);
-            vTaskDelay(1000 / portTICK_PERIOD_MS); 
+            vTaskDelay(100 / portTICK_PERIOD_MS); 
         }
 
         if(modo == MODO_PROG){
@@ -403,4 +442,9 @@ void nfc_init(void){
     xTaskCreate(nfc_task,"NFC",4096,NULL,7,&xHandleLectora);
    
     xTaskCreate(nfc_arbitraje_task,"ARBITRO",1024,NULL,4,NULL);
+}
+
+
+void quitari2c(void){
+    pn532_release(&pn532_io);
 }

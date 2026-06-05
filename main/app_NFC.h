@@ -62,3 +62,4 @@
 #define PROG_TIMEOUT 50000 //Tiempo em ms que dura e modo programador de tags
 //Funciones/tareas públicas
 void nfc_init(void);
+void quitari2c(void);
